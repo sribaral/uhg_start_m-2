@@ -1,0 +1,114 @@
+name: Infrastructure Provisioning
+on:
+  workflow_dispatch: 
+    inputs:
+      # project_name:
+      #   type: choice
+      #   options:
+      #     - gcp-bh-sandbox
+      #     - 'project2'
+      #     - 'project3'
+      #   description: 'GCP Project to bootstrap'
+      project_name:
+        type: environment
+        description: 'GCP Project'
+      terraform_options:
+        description: 'Terraform command'
+        required: true
+        type: choice
+        options: ['plan', 'apply']
+jobs:
+  gcp-terraform:
+    name: Provision Infrastructure
+    #runs-on: { group: ubuntu-uhg }
+    runs-on: uhg-runner
+    permissions:
+      id-token: write
+      contents: read
+
+    # set the environment to project_name input
+    environment: ${{ github.event.inputs.project_name }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+    
+      # show inputs and vars
+      - name: Display Inputs and Variables
+        run: |
+          echo "Selected Project: ${{ github.event.inputs.project_name }}"
+          echo "Selected Command: ${{ github.event.inputs.terraform_options }}"
+          echo "Workload Identity Provider: ${{ vars.GCP_BH_WORKLOAD_IDENTITY_PROVIDER }}"
+          echo "Project ID: ${{ vars.GCP_BH_PROJECT_ID }}"
+          export TF_VAR_TARGET_ENVIRONMENT=${{ github.event.inputs.project_name }}
+
+      # authenticate to Google Cloud
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_BH_WORKLOAD_IDENTITY_PROVIDER }}
+          project_id: ${{ vars.GCP_BH_PROJECT_ID }}
+        # with:
+        #   credentials_json: '${{ secrets.TF_SVC_KEY_JSON }}' # Replace with the name of your GitHub Actions secret   
+
+      # # run terraform commands
+      # - name: Setup Terraform
+      #   uses: hashicorp/setup-terraform@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+            terraform_version: 1.8.3
+
+      # - name: Terraform workspace show
+      #   run: terraform workspace show
+
+      - name: Terraform init
+        id: tf-init
+        run: |
+          cd ./${{ github.event.inputs.project_name }}/
+          pwd
+          # Configure git to use PAT for accessing private repos (e.g., optum-tags)
+          git config --global url."https://x-access-token:${{ secrets.BH_SRE_GITHUB_PAT }}@github.com/".insteadOf "https://github.com/"
+          terraform init -reconfigure -backend-config="bucket=${{ vars.GCP_BH_BUCKET_NAME }}" -backend-config="prefix=${{ vars.GCP_BH_BUCKET_INFRA_FOLDER }}"
+
+      - name: Terraform validate
+        id: tf-validate
+        run: |
+          cd ./${{ github.event.inputs.project_name }}/
+          pwd
+          terraform validate
+
+      - name: Terraform ${{ github.event.inputs.terraform_options }} for ${{ github.event.inputs.project_name }}
+        id: tf-command
+        run: |
+          # Run terraform command
+          cd ./${{ github.event.inputs.project_name }}/
+          pwd
+          command=""
+          auto_approve=""
+          tf_option="${{ github.event.inputs.terraform_options }}"
+          if [[ $tf_option != "plan" ]]; then auto_approve="-auto-approve"; fi
+          command="terraform ${{ github.event.inputs.terraform_options }} -var='project_id=${{ vars.GCP_BH_PROJECT_ID }}' $auto_approve"
+          echo "$command"
+          eval "$command"
+      # - name: Install Yq
+      #   run: pip install yq
+      # - name: Manage Namespaces
+      #   run: |
+      #     echo "Manage Namespaces"
+      #     cd ./${{ github.event.inputs.project_name }}/
+      #     pwd
+      #     ls
+      #     namespace_list=$(cat namespace_list.yaml)
+      #     echo "$namespace_list" # Printing to Verify the contents
+      #     for cluster in $clusters; do 
+      #       cluster_name=$(echo "namespace_list" | yq r - "clusters.$cluster.cluster_name")
+      #       namespaces=$(echo "namespace_list" | yq r - "clusters.$cluster.namespaces"[])
+      #       region=$(echo "namespace_list" | yq r - "clusters.$cluster.region")
+      #       echo "Cluster Name: $cluster_name"
+      #       echo "Namespaces: $namespaces"
+      #       echo "Region: $region"
+      #       echo "***********************************"
+      #       echo "Processing Cluster $cluster_name in $region with namespaces $namespaces"
+      #     done

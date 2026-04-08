@@ -1,0 +1,84 @@
+name: Terraform
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        description: 'Target environment (N/A)'
+        required: true
+        options: ['Development', 'Testing', 'Staging', 'Production']
+      terraform_options:
+        description: 'Terraform command'
+        required: true
+        type: choice
+        options: ['validate', 'plan', 'apply', 'destroy']
+
+jobs:
+  terraform:
+    name: Terraform Deployment
+    runs-on: { group: ubuntu-uhg }
+    steps:
+      - name: Display inputs
+        run: |
+          echo "Selected Environment: ${{ github.event.inputs.environment }}"
+          echo "Selected Command: ${{ github.event.inputs.terraform_options }}"
+          export TF_VAR_TARGET_ENVIRONMENT=${{ github.event.inputs.environment }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate on Google Cloud SDK
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: "${{ secrets.GCP_TMP_SVC_KEY }}"
+
+      # - name: Get file for auth
+      #   run: |
+      #     echo "$GSC_CREDS" >> gsc_creds.json
+      #     ls -ltr
+      #     cat gsc_creds.json
+      #     echo "${PWD##*/}/gsc_creds.json"
+      #     export GOOGLE_APPLICATION_CREDENTIALS="${PWD##*/}/gsc_creds.json"
+      #   env:
+      #     GSC_CREDS: ${{ secrets.GCP_TMP_SVC_KEY }}
+
+      # - name: List of SVC Accounts
+      #   run: gcloud iam service-accounts list
+
+      # - name: Set up Google Cloud SDK
+      #   uses: google-github-actions/setup-gcloud@v2
+
+      # - name: Set storage context
+      #   run: gcloud auth application-default login --project ${{ vars.GCP_BH_PROJECT_ID }} --quiet
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      #- name: Show GOOGLE_APPLICATION_CREDENTIALS env var value
+      #  run: export TF_VAR_GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
+
+      - name: Terraform init
+        id: tf-init
+        run: terraform init -reconfigure
+
+      - name: Terraform validate
+        id: tf-validate
+        if: github.event.inputs.terraform_options == 'validate'
+        run: terraform validate
+
+      - name: Terraform plan
+        id: tf-plan
+        if: github.event.inputs.terraform_options == 'plan'
+        run: terraform plan
+
+      - name: Terraform apply
+        if: github.event.inputs.terraform_options == 'apply'
+        run: terraform apply -auto-approve
+      
+      - name: Terraform destroy
+        if: github.event.inputs.terraform_options == 'destroy'
+        run: terraform destroy -auto-approve
+
+      # - name: Delete auth file
+      #   run: rm gsc_creds.json

@@ -1,0 +1,48 @@
+name: Terraform Infra Siva
+on:
+  workflow_dispatch: 
+    inputs:
+      project_name:
+        type: choice
+        options:
+          - gcp-bh-sandbox
+          - 'project2'
+          - 'project3'
+        description: 'GCP Project to bootstrap'
+      terraform_options:
+        type: choice
+        options:
+            - 'n/a'
+            - 'init'
+            - 'validate'
+            - 'plan'
+            - 'apply'
+            - 'destroy'
+            - 'output'
+        description: 'Terraform command to run'
+jobs:
+  oidc-terraform:
+    name: Install Gcloud, auth
+    runs-on: uhg-runner-m
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2 #GCP_BH_SANDBOX_PROJECT_ID
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: projects/215851629362/locations/global/workloadIdentityPools/github-siva/providers/sre-gcp-tf-siva # only change
+        project_id: ${{ vars.GCP_BH_SANDBOX_PROJECT_ID }}
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+         terraform_version: 1.8.3
+    - name: Execute Terraform Command
+      run: |
+        cd ${{ github.event.inputs.project_name }}
+        terraform init
+        terraform validate
+        terraform plan -var="project_id=${{ vars.GCP_BH_SANDBOX_PROJECT_ID }}"
+        terraform apply -var="project_id=${{ vars.GCP_BH_SANDBOX_PROJECT_ID }}" -auto-approve 
